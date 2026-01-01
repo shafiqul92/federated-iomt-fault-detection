@@ -1,0 +1,89 @@
+# Configuration file for AHU Fault Detection Project
+
+# Data paths
+data:
+  raw_data_path: "raw_data.csv"
+  preprocessed_data_path: "preprocessed_data.csv"
+  splits_dir: "processed_splits_advanced"
+  test_data_path: "test.csv"
+
+# Model configuration
+model:
+  input_dim: 15  # Will be auto-detected from data
+  num_classes: 4
+  embed_dim: 256
+  cnn_channels: [128, 256, 384]
+  lstm_hidden_dim: 256
+  lstm_num_layers: 2
+  num_attention_heads: 8
+  num_residual_blocks: 2
+  dropout: 0.3
+
+# Training configuration
+training:
+  batch_size: 128
+  num_workers: 4
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  max_epochs: 50
+  patience: 10
+  use_class_weights: true
+  weight_power: 1.5
+
+# Federated Learning configuration
+federated:
+  num_rounds: 40
+  local_epochs: 5
+  baseline_model_path: "best_model_centralized_baseline.pth"
+
+# Edge-Aware FL configuration
+edge_aware:
+  # Resource thresholds
+  min_battery: 20
+  min_cpu: 30
+  threshold_mode: "moderate"  # strict, moderate, lenient
+  
+  # Ablation study settings
+  enable_adaptive_epochs: true
+  enable_adaptive_weights: true
+  enable_smart_selection: true
+  epoch_adaptation: "conservative"  # fixed, linear, conservative, aggressive
+  offloading_strategy: "network_based"  # none, cpu_based, battery_based, network_based, hybrid
+  weight_strategy: "full"  # data_only, data_cpu, data_battery, full
+  
+  # Edge devices (CPU score, Battery %, Bandwidth Mbps, Memory MB)
+  devices:
+    ahu_1: [85, 90, 50, 2048]
+    ahu_2: [70, 75, 30, 1536]
+    ahu_3: [90, 95, 100, 4096]
+    ahu_4: [60, 60, 20, 1024]
+    ahu_5: [80, 85, 40, 2048]
+    ahu_6: [75, 70, 35, 1536]
+    ahu_8: [65, 65, 25, 1024]
+
+# Evaluation/Streaming configuration
+evaluation:
+  plot_dir: "plots"
+  update_interval: 1000  # Generate plots every N samples
+  print_interval: 1  # Print every Nth sample
+  delay_ms: 0  # Delay between predictions (ms)
+
+# Label mapping
+labels:
+  names:
+    0: "Normal"
+    1: "RATSF"
+    2: "SFF"
+    3: "VPF"
+  names_full:
+    0: "Normal Condition"
+    1: "Return Air Temp Sensor Fault"
+    2: "Supply Fan Fault"
+    3: "Valve Position Fault"
+
+# Model paths (will be auto-detected if not specified)
+model_paths:
+  centralized: null  # Auto-detect latest
+  fedavg: null  # Auto-detect latest
+  edge_aware: null  # Auto-detect latest
+

@@ -1,1 +1,79 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
 venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Data files (add raw data if needed)
+*.csv
+!requirements.txt
+!README.md
+
+# Model checkpoints and results
+*.pth
+*.pt
+*.pkl
+*.h5
+*.ckpt
+results_*.json
+model_*.pth
+best_model_*.pth
+
+# Plots and outputs
+plots/
+*.png
+*.jpg
+*.pdf
+
+# Logs
+*.log
+nohup_*.log
+*.out
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Preprocessed data
+preprocessed_data.csv
+processed_splits_advanced/
+label_*.csv
+
+# OS files
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.bak
+*.swp

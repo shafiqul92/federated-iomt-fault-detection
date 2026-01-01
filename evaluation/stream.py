@@ -4,8 +4,14 @@ Compares Centralized Baseline, FedAvg, and Edge-Aware FL models
 Generates plots at checkpoints during streaming
 """
 
-import os
 import sys
+from pathlib import Path
+
+# Add project root to path
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+import os
 import time
 import numpy as np
 import pandas as pd
@@ -22,158 +28,55 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
 
+# Import model from shared module
+from models.hybrid_model import HybridLSTMCNNAttention
+
+# Import utilities for model file detection
+from utils import find_latest_model
+
 # Set professional style
 plt.style.use('seaborn-v0_8-whitegrid')
 sns.set_palette("husl")
 
-# ============================================================================
-# MODEL ARCHITECTURE
-# ============================================================================
-
-class AttentionLayer(nn.Module):
-    """Multi-head self-attention layer"""
-    def __init__(self, embed_dim, num_heads=8, dropout=0.1):
-        super().__init__()
-        self.attention = nn.MultiheadAttention(
-            embed_dim=embed_dim, num_heads=num_heads, dropout=dropout, batch_first=True
-        )
-        self.norm = nn.LayerNorm(embed_dim)
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x):
-        attn_out, _ = self.attention(x, x, x)
-        x = self.norm(x + self.dropout(attn_out))
-        return x
-
-
-class ResidualBlock(nn.Module):
-    """Residual block with layer normalization"""
-    def __init__(self, dim, dropout=0.3):
-        super().__init__()
-        self.fc1 = nn.Linear(dim, dim)
-        self.fc2 = nn.Linear(dim, dim)
-        self.norm1 = nn.LayerNorm(dim)
-        self.norm2 = nn.LayerNorm(dim)
-        self.dropout = nn.Dropout(dropout)
-        self.activation = nn.GELU()
-
-    def forward(self, x):
-        residual = x
-        x = self.activation(self.norm1(self.fc1(x)))
-        x = self.dropout(x)
-        x = self.norm2(self.fc2(x))
-        x = self.dropout(x)
-        return self.activation(x + residual)
-
-
-class HybridLSTMCNNAttention(nn.Module):
-    """Hybrid model: LSTM + CNN + Multi-Head Attention"""
-    
-    def __init__(self, input_dim, num_classes, embed_dim=256, cnn_channels=[128, 256, 384],
-                 lstm_hidden_dim=256, lstm_num_layers=2, num_attention_heads=8,
-                 num_residual_blocks=2, dropout=0.3):
-        super().__init__()
-        self.input_dim = input_dim
-        self.num_classes = num_classes
-        self.embed_dim = embed_dim
-
-        self.input_proj = nn.Sequential(
-            nn.Linear(input_dim, embed_dim), nn.LayerNorm(embed_dim), nn.GELU(), nn.Dropout(dropout)
-        )
-
-        self.cnn_layers = nn.ModuleList()
-        in_channels = 1
-        for out_channels in cnn_channels:
-            self.cnn_layers.append(nn.Sequential(
-                nn.Conv1d(in_channels, out_channels, kernel_size=5, padding=2),
-                nn.BatchNorm1d(out_channels), nn.GELU(), nn.Dropout(dropout),
-                nn.Conv1d(out_channels, out_channels, kernel_size=3, padding=1),
-                nn.BatchNorm1d(out_channels), nn.GELU(), nn.Dropout(dropout)
-            ))
-            in_channels = out_channels
-
-        self.cnn_pool = nn.AdaptiveAvgPool1d(1)
-        self.lstm = nn.LSTM(
-            input_size=embed_dim, hidden_size=lstm_hidden_dim, num_layers=lstm_num_layers,
-            batch_first=True, dropout=dropout if lstm_num_layers > 1 else 0, bidirectional=True
-        )
-
-        lstm_output_dim = lstm_hidden_dim * 2
-        self.attention = AttentionLayer(embed_dim=lstm_output_dim, num_heads=num_attention_heads, dropout=dropout)
-
-        cnn_out_dim = cnn_channels[-1]
-        self.cnn_proj = nn.Sequential(
-            nn.Linear(cnn_out_dim, embed_dim), nn.LayerNorm(embed_dim), nn.GELU(), nn.Dropout(dropout)
-        )
-        self.lstm_proj = nn.Sequential(
-            nn.Linear(lstm_output_dim, embed_dim), nn.LayerNorm(embed_dim), nn.GELU(), nn.Dropout(dropout)
-        )
-
-        fusion_dim = embed_dim * 2
-        self.fusion = nn.Sequential(
-            nn.Linear(fusion_dim, 512), nn.LayerNorm(512), nn.GELU(), nn.Dropout(dropout)
-        )
-
-        self.residual_blocks = nn.ModuleList([
-            ResidualBlock(512, dropout=dropout) for _ in range(num_residual_blocks)
-        ])
-
-        self.classifier = nn.Sequential(
-            nn.Linear(512, 256), nn.LayerNorm(256), nn.GELU(), nn.Dropout(dropout),
-            nn.Linear(256, 128), nn.LayerNorm(128), nn.GELU(), nn.Dropout(dropout),
-            nn.Linear(128, num_classes)
-        )
-        self._init_weights()
-
-    def _init_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight, gain=0.5)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Conv1d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, (nn.LayerNorm, nn.BatchNorm1d)):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-
-    def forward(self, x):
-        x_embed = self.input_proj(x)
-        x_cnn = x.unsqueeze(1)
-        for cnn_layer in self.cnn_layers:
-            x_cnn = cnn_layer(x_cnn)
-        x_cnn = self.cnn_pool(x_cnn).squeeze(-1)
-        x_cnn = self.cnn_proj(x_cnn)
-
-        x_lstm = x_embed.unsqueeze(1)
-        lstm_out, _ = self.lstm(x_lstm)
-        x_lstm = self.attention(lstm_out)
-        x_lstm = x_lstm.squeeze(1)
-        x_lstm = self.lstm_proj(x_lstm)
-
-        x_fused = torch.cat([x_cnn, x_lstm], dim=1)
-        x_fused = self.fusion(x_fused)
-        for res_block in self.residual_blocks:
-            x_fused = res_block(x_fused)
-        logits = self.classifier(x_fused)
-        return logits
-
+# Set Times New Roman font for all plots
+plt.rcParams['font.family'] = 'serif'
+plt.rcParams['font.serif'] = ['Times New Roman']
+plt.rcParams['mathtext.fontset'] = 'custom'
+plt.rcParams['mathtext.rm'] = 'Times New Roman'
+plt.rcParams['mathtext.it'] = 'Times New Roman:italic'
+plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
-CENTRALIZED_MODEL_PATH = 'best_model_centralized_baseline.pth'
-FEDAVG_MODEL_PATH = 'model_fedavg_20251117_195739.pth'
-EDGE_AWARE_MODEL_PATH = 'model_edge_aware_full_edge_aware_full_moderate_conservative_offload_network_based_20251117_194301.pth'
-TEST_DATA_PATH = 'test.csv'
+# Auto-detect latest model files, fallback to specific paths if not found
+CENTRALIZED_MODEL_PATH = find_latest_model('best_model_centralized_baseline.pth', root_dir=str(PROJECT_ROOT))
+if CENTRALIZED_MODEL_PATH is None:
+    CENTRALIZED_MODEL_PATH = PROJECT_ROOT / 'best_model_centralized_baseline.pth'
+else:
+    CENTRALIZED_MODEL_PATH = Path(CENTRALIZED_MODEL_PATH)
+
+FEDAVG_MODEL_PATH = find_latest_model('model_fedavg_*.pth', root_dir=str(PROJECT_ROOT))
+if FEDAVG_MODEL_PATH is None:
+    # Fallback to old hardcoded path
+    FEDAVG_MODEL_PATH = PROJECT_ROOT / 'model_fedavg_20251117_195739.pth'
+else:
+    FEDAVG_MODEL_PATH = Path(FEDAVG_MODEL_PATH)
+
+EDGE_AWARE_MODEL_PATH = find_latest_model('model_edge_aware_*.pth', root_dir=str(PROJECT_ROOT))
+if EDGE_AWARE_MODEL_PATH is None:
+    # Fallback to old hardcoded path
+    EDGE_AWARE_MODEL_PATH = PROJECT_ROOT / 'model_edge_aware_full_edge_aware_full_moderate_conservative_offload_network_based_20251117_194301.pth'
+else:
+    EDGE_AWARE_MODEL_PATH = Path(EDGE_AWARE_MODEL_PATH)
+
+TEST_DATA_PATH = PROJECT_ROOT / 'test.csv'
 
 INPUT_DIM = 15
 NUM_CLASSES = 4
 DROPOUT = 0.3
-PLOT_DIR = 'plots'
+PLOT_DIR = PROJECT_ROOT / 'plots'
 
 UPDATE_INTERVAL = 1000  # Generate plots every 1000 samples
 PRINT_INTERVAL = 1  # Print every sample (set to 10 for every 10th sample)
@@ -210,7 +113,9 @@ def load_model(model_path, input_dim, num_classes, device):
         cnn_channels=[128, 256, 384], lstm_hidden_dim=256, lstm_num_layers=2,
         num_attention_heads=8, num_residual_blocks=2, dropout=DROPOUT
     ).to(device)
-    state_dict = torch.load(model_path, map_location=device)
+    # Convert Path to string for torch.load
+    model_path_str = str(model_path) if isinstance(model_path, Path) else model_path
+    state_dict = torch.load(model_path_str, map_location=device)
     model.load_state_dict(state_dict)
     model.eval()
     return model
@@ -297,8 +202,8 @@ class MetricsTracker:
 # ============================================================================
 
 def create_plots_directory():
-    os.makedirs(PLOT_DIR, exist_ok=True)
-    os.makedirs(f'{PLOT_DIR}/checkpoints', exist_ok=True)
+    PLOT_DIR.mkdir(parents=True, exist_ok=True)
+    (PLOT_DIR / 'checkpoints').mkdir(parents=True, exist_ok=True)
     print(f"✓ Plots directory: {PLOT_DIR}/")
 
 
@@ -339,7 +244,7 @@ def plot_checkpoint_curves(trackers, checkpoint_num, total_samples):
     ax2.set_ylim([0, 105])
     
     plt.tight_layout()
-    plt.savefig(f'{PLOT_DIR}/checkpoints/checkpoint_{checkpoint_num:03d}_curves.png', 
+    plt.savefig(PLOT_DIR / 'checkpoints' / f'checkpoint_{checkpoint_num:03d}_curves.png', 
                 dpi=200, bbox_inches='tight')
     plt.close()
 
@@ -387,7 +292,7 @@ def plot_checkpoint_comparison(trackers, checkpoint_num):
                 fontsize=11, fontweight='bold')
     
     plt.tight_layout()
-    plt.savefig(f'{PLOT_DIR}/checkpoints/checkpoint_{checkpoint_num:03d}_comparison.png', 
+    plt.savefig(PLOT_DIR / 'checkpoints' / f'checkpoint_{checkpoint_num:03d}_comparison.png', 
                 dpi=200, bbox_inches='tight')
     plt.close()
 
@@ -464,7 +369,7 @@ def plot_final_comprehensive(trackers):
     plt.suptitle('Real-Time Model Comparison - Complete Analysis',
                 fontsize=20, fontweight='bold', y=0.995)
     plt.tight_layout()
-    plt.savefig(f'{PLOT_DIR}/01_complete_streaming_analysis.png', dpi=300, bbox_inches='tight')
+    plt.savefig(PLOT_DIR / '01_complete_streaming_analysis.png', dpi=300, bbox_inches='tight')
     plt.close()
     print("✓ Saved: 01_complete_streaming_analysis.png")
     
@@ -487,7 +392,7 @@ def plot_final_comprehensive(trackers):
     
     plt.suptitle('Confusion Matrices - Final Results', fontsize=18, fontweight='bold')
     plt.tight_layout()
-    plt.savefig(f'{PLOT_DIR}/02_confusion_matrices.png', dpi=300, bbox_inches='tight')
+    plt.savefig(PLOT_DIR / '02_confusion_matrices.png', dpi=300, bbox_inches='tight')
     plt.close()
     print("✓ Saved: 02_confusion_matrices.png")
     
@@ -524,7 +429,7 @@ def plot_final_comprehensive(trackers):
     ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=13, framealpha=0.9)
     
     plt.tight_layout()
-    plt.savefig(f'{PLOT_DIR}/03_radar_chart.png', dpi=300, bbox_inches='tight')
+    plt.savefig(PLOT_DIR / '03_radar_chart.png', dpi=300, bbox_inches='tight')
     plt.close()
     print("✓ Saved: 03_radar_chart.png")
     
@@ -566,7 +471,7 @@ def plot_final_comprehensive(trackers):
     
     plt.suptitle('Per-Class Performance Metrics', fontsize=18, fontweight='bold')
     plt.tight_layout()
-    plt.savefig(f'{PLOT_DIR}/04_per_class_performance.png', dpi=300, bbox_inches='tight')
+    plt.savefig(PLOT_DIR / '04_per_class_performance.png', dpi=300, bbox_inches='tight')
     plt.close()
     print("✓ Saved: 04_per_class_performance.png")
     
@@ -623,7 +528,7 @@ def plot_final_comprehensive(trackers):
     
     plt.suptitle('Model Agreement and Consensus', fontsize=16, fontweight='bold')
     plt.tight_layout()
-    plt.savefig(f'{PLOT_DIR}/05_model_agreement.png', dpi=300, bbox_inches='tight')
+    plt.savefig(PLOT_DIR / '05_model_agreement.png', dpi=300, bbox_inches='tight')
     plt.close()
     print("✓ Saved: 05_model_agreement.png")
     
@@ -662,14 +567,14 @@ def plot_final_comprehensive(trackers):
     
     plt.suptitle('Convergence and Stability Analysis', fontsize=16, fontweight='bold')
     plt.tight_layout()
-    plt.savefig(f'{PLOT_DIR}/06_convergence_analysis.png', dpi=300, bbox_inches='tight')
+    plt.savefig(PLOT_DIR / '06_convergence_analysis.png', dpi=300, bbox_inches='tight')
     plt.close()
     print("✓ Saved: 06_convergence_analysis.png")
 
 
 def create_summary_report(trackers):
     """Create text summary"""
-    report_path = f'{PLOT_DIR}/summary_report.txt'
+    report_path = PLOT_DIR / 'summary_report.txt'
     
     with open(report_path, 'w') as f:
         f.write("="*80 + "\n")
@@ -724,7 +629,7 @@ def main():
     
     # Load data
     print(f"Loading test data from: {TEST_DATA_PATH}")
-    test_df = pd.read_csv(TEST_DATA_PATH)
+    test_df = pd.read_csv(str(TEST_DATA_PATH))
     
     ahu_cols = [col for col in test_df.columns if col.startswith('ahu_')]
     drop_cols = ['label'] + ahu_cols + ['id', 'label_full', 'AHU_name']
@@ -748,12 +653,13 @@ def main():
     }
     
     for name, path in model_paths.items():
-        if os.path.exists(path):
+        path_obj = Path(path) if not isinstance(path, Path) else path
+        if path_obj.exists():
             print(f"  Loading {name}... ", end="")
-            models[name] = load_model(path, input_dim, NUM_CLASSES, device)
+            models[name] = load_model(path_obj, input_dim, NUM_CLASSES, device)
             print("✓")
         else:
-            print(f"  ✗ {name} not found")
+            print(f"  ✗ {name} not found at {path_obj}")
             return
     
     trackers = {name: MetricsTracker(name) for name in models.keys()}

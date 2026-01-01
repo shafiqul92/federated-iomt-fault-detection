@@ -37,8 +37,6 @@ fault-detection-iomt/
 │   └── stream.py        # Real-time streaming comparison
 ├── utils/               # Utility functions
 │   └── __init__.py
-├── processed_splits_advanced/  # Processed data splits
-├── plots/               # Generated plots and visualizations
 ├── requirements.txt     # Python dependencies
 ├── .gitignore          # Git ignore rules
 └── README.md           # This file
@@ -55,8 +53,8 @@ fault-detection-iomt/
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
-   cd fault-detection-iomt
+   git clone https://github.com/shafiqul92/federated-iomt-fault-detection.git
+   cd federated-iomt-fault-detection
    ```
 
 2. **Create virtual environment**
@@ -109,10 +107,6 @@ python training/train_centralized.py
 **Output:**
 - `best_model_centralized_baseline.pth` - Best model checkpoint
 - Training logs and metrics
-
-**Expected Performance:**
-- Accuracy: ~97%
-- Weighted F1: ~97%
 
 ### 2. Federated Averaging (FedAvg)
 
@@ -193,18 +187,6 @@ The project uses a **Hybrid LSTM-CNN-Attention** model:
 - **Residual Connections**: Enables deeper networks
 
 **Parameters:** ~5-10M (CPU-friendly)
-
-## 📝 Results
-
-Based on experimental results:
-
-| Model | Accuracy | Weighted F1 | Macro F1 |
-|-------|----------|-------------|----------|
-| Centralized Baseline | ~97.0% | ~97.3% | ~89.0% |
-| FedAvg | ~97.0% | ~97.3% | ~89.0% |
-| Edge-Aware FL | ~94.8% | ~95.2% | ~74.6% |
-
-**Note:** Edge-Aware FL trades some accuracy for resource efficiency and practical deployment considerations.
 
 ## 🔧 Advanced Usage
 

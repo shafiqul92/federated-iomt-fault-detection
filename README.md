@@ -26,6 +26,8 @@ fault-detection-iomt/
 ├── data/                # Data processing scripts
 │   ├── preprocess.py    # Data preprocessing
 │   └── split.py         # Train/val/test splitting with SMOTE
+├── dataset/             # Dataset files
+│   └── raw_data.csv     # Raw dataset
 ├── models/              # Model architectures
 │   ├── hybrid_model.py  # Hybrid LSTM+CNN+Attention model
 │   └── __init__.py
@@ -78,7 +80,14 @@ fault-detection-iomt/
 
 ### Data Preparation
 
-1. **Place your raw data file** (`raw_data.csv`) in the root directory
+1. **Copy the dataset file** from `dataset/raw_data.csv` to the root directory:
+   ```bash
+   cp dataset/raw_data.csv .
+   ```
+   Or on Windows:
+   ```bash
+   copy dataset\raw_data.csv .
+   ```
 
 2. **Preprocess the data**
    ```bash

@@ -34,10 +34,11 @@ ENV/
 *~
 .DS_Store
 
-# Data files (add raw data if needed)
+# Data files (dataset folder is tracked)
 *.csv
 !requirements.txt
 !README.md
+!dataset/*.csv
 
 # Model checkpoints and results
 *.pth

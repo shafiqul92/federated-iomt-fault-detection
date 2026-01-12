@@ -221,31 +221,3 @@ The edge-aware training script supports multiple ablation study configurations:
 
 Edit `config/config.yaml` or modify `training/train_edge_aware.py` to explore different configurations.
 
-## 📚 Documentation
-
-- **Code Documentation**: Docstrings are provided in all major modules
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-[Add your license here]
-
-## 🙏 Acknowledgments
-
-- Dataset: AHU fault detection data from hospital environments
-- Libraries: PyTorch, scikit-learn, imbalanced-learn
-
-## 📧 Contact
-
-[Add your contact information]
-
----
-
-**Note:** Make sure to have sufficient disk space for processed data and model checkpoints (~1-2 GB recommended).

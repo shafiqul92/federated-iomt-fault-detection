@@ -223,7 +223,6 @@ Edit `config/config.yaml` or modify `training/train_edge_aware.py` to explore di
 
 ## 📚 Documentation
 
-- **Edge-Aware Policy**: See `edge_aware_policy.md` for detailed policy documentation
 - **Code Documentation**: Docstrings are provided in all major modules
 
 ## 🤝 Contributing
